@@ -22,7 +22,7 @@ module "vpc" {
   source  = "terraform-aws-modules/vpc/aws"
   version = "5.8.1"
 
-  name = "education-vpc"
+  name = "aire-eks-vpc"
 
   cidr = "10.241.0.0/16"
   azs  = slice(data.aws_availability_zones.available.names, 0, 3)
@@ -41,6 +41,8 @@ module "vpc" {
   private_subnet_tags = {
     "kubernetes.io/role/internal-elb" = 1
   }
+
+  
 }
 
 module "eks" {
@@ -90,7 +92,7 @@ module "eks" {
 
   # EKS Managed Node Group(s)
   eks_managed_node_groups = {
-    default = {
+    aire-eks-node-group = {
       # Starting on 1.30, AL2023 is the default AMI type for EKS managed node groups
       ami_type       = "AL2023_x86_64_STANDARD"
       instance_types = ["t3.large"]
@@ -98,6 +100,17 @@ module "eks" {
       min_size     = 2
       max_size     = 2
       desired_size = 2
+
+      # Instance metadata options
+      metadata_options = {
+        http_endpoint               = "enabled"
+        http_tokens                 = "required"
+        http_put_response_hop_limit = 2
+      }
+
+      iam_role_additional_policies = {
+        ebs_csi = "arn:aws:iam::aws:policy/AmazonEBSCSIDriverPolicyV2"
+      }
     }
   }
 
@@ -105,13 +118,4 @@ module "eks" {
     Environment = "dev"
     Terraform   = "true"
   }
-}
-
-# ── EBS CSI driver IAM ───────────────────────────────────────────────────────
-# Attach the AWS-managed EBS CSI policy to the node IAM role so the driver
-# can call EC2 APIs to create/attach volumes.
-
-resource "aws_iam_role_policy_attachment" "ebs_csi_node" {
-  role       = module.eks.eks_managed_node_groups["default"].iam_role_name
-  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy"
 }

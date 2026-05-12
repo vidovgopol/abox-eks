@@ -1,0 +1,28 @@
+# Terraform — provider binaries and module cache (large, local only)
+**/.terraform/
+.terraform.lock.hcl
+**/.terraform.lock.hcl
+
+# State files — contain secrets and infra IDs
+*.tfstate
+*.tfstate*
+
+# Lock info — contains machine hostname, created during apply
+.terraform.tfstate.lock.info
+**/.terraform.tfstate.lock.info
+
+# Plan files — contain account IDs and resource details
+*.binary
+tfplan.*
+*.tfplan
+
+# Variable files — may contain API keys or sensitive values
+*.tfvars
+*.tfvars.json
+
+# Crash logs
+crash.log
+crash.*.log
+
+# OS
+.DS_Store

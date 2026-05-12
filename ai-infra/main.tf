@@ -71,6 +71,20 @@ resource "helm_release" "kagent" {
   namespace        = "kagent"
   create_namespace = true
   depends_on       = [helm_release.kagent_crds]
+
+  values = [
+    yamlencode({
+      providers = {
+        default = "anthropic"
+        anthropic = {
+          provider        = "Anthropic"
+          model           = "claude-sonnet-4-6"
+          apiKeySecretRef = "anthropic-api-key"
+          apiKeySecretKey = "api-key"
+        }
+      }
+    })
+  ]
 }
 
 # ── agentgateway ─────────────────────────────────────────────────────────────
@@ -111,7 +125,7 @@ resource "kubectl_manifest" "anthropic_secret" {
       "api-key" = var.anthropic_api_key
     }
   })
-  depends_on = [helm_release.kagent]
+  depends_on = [helm_release.kagent_crds]
 }
 
 # ── Standard Gateway API CRDs ────────────────────────────────────────────────
@@ -142,14 +156,15 @@ resource "kubectl_manifest" "agentgw_gateway" {
     metadata = {
       name      = "agentgateway-external"
       namespace = "agentgateway-system"
-      annotations = {
-        "service.beta.kubernetes.io/aws-load-balancer-type"            = "external"
-        "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "ip"
-        "service.beta.kubernetes.io/aws-load-balancer-security-groups" = aws_security_group.agentgw_lb.id
-      }
     }
     spec = {
       gatewayClassName = "agentgateway"
+      infrastructure = {
+        annotations = {
+          "service.beta.kubernetes.io/aws-load-balancer-type"          = "nlb"
+          "service.beta.kubernetes.io/aws-load-balancer-source-ranges" = var.allowed_cidr
+        }
+      }
       listeners = [{
         name     = "http"
         port     = 80
