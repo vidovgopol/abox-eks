@@ -16,11 +16,6 @@ variable "anthropic_api_key" {
   sensitive   = true
 }
 
-variable "allowed_cidr" {
-  description = "Your IP in CIDR notation (e.g. 1.2.3.4/32) — the agentgateway LB will accept traffic only from this address"
-  type        = string
-}
-
 # Set to null to install latest. Pin to a specific version for reproducibility.
 # Check releases: https://github.com/kagent-dev/kagent/releases
 variable "kagent_version" {
@@ -41,3 +36,4 @@ variable "aws_lbc_chart_version" {
   type        = string
   default     = "1.11.0"
 }
+

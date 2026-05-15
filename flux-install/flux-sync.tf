@@ -2,7 +2,7 @@
 
 resource "kubectl_manifest" "flux_oci_repository" {
   yaml_body = yamlencode({
-    apiVersion = "source.toolkit.fluxcd.io/v1beta2"
+    apiVersion = "source.toolkit.fluxcd.io/v1"
     kind       = "OCIRepository"
     metadata = {
       name      = "abox-eks-releases"

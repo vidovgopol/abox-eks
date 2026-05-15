@@ -2,80 +2,14 @@ locals {
   vpc_id = data.aws_eks_cluster.this.vpc_config[0].vpc_id
 }
 
-# ── Security ──────────────────────────────────────────────────────────────────
+# ── agentgw LB security group (created in eks-bootstrap) ─────────────────────
 
-resource "aws_security_group" "agentgw_lb" {
-  name        = "agentgw-lb-${var.cluster_name}"
-  description = "Agentgateway ALB - inbound restricted to allowed_cidr"
-  vpc_id      = local.vpc_id
-
-  ingress {
-    description = "HTTP from allowed CIDR only"
-    from_port   = 80
-    to_port     = 80
-    protocol    = "tcp"
-    cidr_blocks = [var.allowed_cidr]
-  }
-
-  ingress {
-    description = "agentgateway admin UI from allowed CIDR only"
-    from_port   = 15000
-    to_port     = 15000
-    protocol    = "tcp"
-    cidr_blocks = [var.allowed_cidr]
-  }
-
-  egress {
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
-
-  tags = {
-    Name      = "agentgw-lb-${var.cluster_name}"
-    Terraform = "true"
-  }
-}
-
-# Allow ALB to reach pods on the node security group (ports 80 and 15000).
-# ALB with target-type=ip sends traffic directly to pod IPs; the node SG
-# must permit this from the ALB SG.
-# The EKS module v21 names the node SG "<cluster_name>-node".
-data "aws_security_group" "eks_node" {
-  filter {
-    name   = "group-name"
-    values = ["${var.cluster_name}-node-*"]
-  }
-  filter {
-    name   = "vpc-id"
-    values = [local.vpc_id]
-  }
-}
-
-resource "aws_security_group_rule" "alb_to_nodes_http" {
-  type                     = "ingress"
-  from_port                = 80
-  to_port                  = 80
-  protocol                 = "tcp"
-  security_group_id        = data.aws_security_group.eks_node.id
-  source_security_group_id = aws_security_group.agentgw_lb.id
-  description              = "ALB to kagent pods (port 80)"
-}
-
-resource "aws_security_group_rule" "alb_to_nodes_admin" {
-  type                     = "ingress"
-  from_port                = 15000
-  to_port                  = 15000
-  protocol                 = "tcp"
-  security_group_id        = data.aws_security_group.eks_node.id
-  source_security_group_id = aws_security_group.agentgw_lb.id
-  description              = "ALB to agentgateway admin UI (port 15000)"
+data "aws_security_group" "agentgw_lb" {
+  name   = "agentgw-lb-${var.cluster_name}"
+  vpc_id = local.vpc_id
 }
 
 # ── AWS Load Balancer Controller IAM ─────────────────────────────────────────
-
-data "aws_caller_identity" "current" {}
 
 data "http" "aws_lbc_policy" {
   url = "https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.11.0/docs/install/iam_policy.json"
@@ -253,9 +187,9 @@ resource "null_resource" "gateway_api_crds" {
 }
 
 # ── Gateway + HTTPRoute ───────────────────────────────────────────────────────
-# AWS LBC (installed above) manages NLBs when aws-load-balancer-type=external.
-# Unlike the in-tree controller, LBC honours aws-load-balancer-security-groups
-# on NLBs, so all inbound traffic is filtered to allowed_cidr at the NLB level.
+# LBC manages the NLB when aws-load-balancer-type=external.
+# manage-backend-security-group-rules=true lets LBC automatically add/remove
+# inbound rules on the node SG — no manual aws_security_group_rule needed.
 
 resource "kubectl_manifest" "agentgw_gateway" {
   server_side_apply = true
@@ -270,10 +204,11 @@ resource "kubectl_manifest" "agentgw_gateway" {
       gatewayClassName = "agentgateway"
       infrastructure = {
         annotations = {
-          "service.beta.kubernetes.io/aws-load-balancer-type"             = "external"
-          "service.beta.kubernetes.io/aws-load-balancer-scheme"          = "internet-facing"
-          "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type" = "ip"
-          "service.beta.kubernetes.io/aws-load-balancer-security-groups"  = aws_security_group.agentgw_lb.id
+          "service.beta.kubernetes.io/aws-load-balancer-type"                        = "external"
+          "service.beta.kubernetes.io/aws-load-balancer-scheme"                     = "internet-facing"
+          "service.beta.kubernetes.io/aws-load-balancer-nlb-target-type"            = "ip"
+          "service.beta.kubernetes.io/aws-load-balancer-security-groups"            = data.aws_security_group.agentgw_lb.id
+          "service.beta.kubernetes.io/aws-load-balancer-manage-backend-security-group-rules" = "true"
         }
       }
       listeners = [{
@@ -317,75 +252,4 @@ resource "kubectl_manifest" "kagent_httproute" {
     }
   })
   depends_on = [kubectl_manifest.agentgw_gateway, helm_release.kagent]
-}
-
-# ── agentgateway admin UI service (ClusterIP, port 15000) ────────────────────
-# The agentgateway pod exposes its admin UI on port 15000. The Helm chart does
-# not create a Service for this port, so we add one here as a ClusterIP target
-# for the ALB (target-type=ip bypasses the Service for routing, but we need
-# this Service so the ALB TargetGroup can discover the correct port).
-
-resource "kubectl_manifest" "agentgateway_admin_svc" {
-  yaml_body = yamlencode({
-    apiVersion = "v1"
-    kind       = "Service"
-    metadata = {
-      name      = "agentgateway-admin"
-      namespace = "agentgateway-system"
-    }
-    spec = {
-      type = "ClusterIP"
-      selector = {
-        "app.kubernetes.io/name"     = "agentgateway"
-        "app.kubernetes.io/instance" = "agentgateway"
-      }
-      ports = [{
-        name       = "admin"
-        port       = 15000
-        targetPort = 15000
-        protocol   = "TCP"
-      }]
-    }
-  })
-  depends_on = [helm_release.agentgateway]
-}
-
-# ── ALB Ingress — agentgateway admin UI (port 15000) ─────────────────────────
-
-resource "kubectl_manifest" "alb_ingress_admin" {
-  yaml_body = yamlencode({
-    apiVersion = "networking.k8s.io/v1"
-    kind       = "Ingress"
-    metadata = {
-      name      = "agentgateway-admin"
-      namespace = "agentgateway-system"
-      annotations = {
-        "kubernetes.io/ingress.class"                        = "alb"
-        "alb.ingress.kubernetes.io/scheme"                   = "internet-facing"
-        "alb.ingress.kubernetes.io/target-type"              = "ip"
-        "alb.ingress.kubernetes.io/group.name"               = "agentgateway"
-        "alb.ingress.kubernetes.io/listen-ports"             = jsonencode([{ HTTP = 15000 }])
-        "alb.ingress.kubernetes.io/security-groups"          = aws_security_group.agentgw_lb.id
-        "alb.ingress.kubernetes.io/manage-backend-security-group-rules" = "true"
-      }
-    }
-    spec = {
-      ingressClassName = "alb"
-      rules = [{
-        http = {
-          paths = [{
-            path     = "/"
-            pathType = "Prefix"
-            backend = {
-              service = {
-                name = "agentgateway-admin"
-                port = { number = 15000 }
-              }
-            }
-          }]
-        }
-      }]
-    }
-  })
-  depends_on = [helm_release.aws_lbc, kubectl_manifest.agentgateway_admin_svc]
 }
