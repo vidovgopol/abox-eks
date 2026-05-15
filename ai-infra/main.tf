@@ -125,6 +125,17 @@ resource "helm_release" "kagent" {
           apiKeySecretKey = "api-key"
         }
       }
+      "kgateway-agent"      = { enabled = false }
+      "istio-agent"         = { enabled = false }
+      "promql-agent"        = { enabled = false }
+      "observability-agent" = { enabled = false }
+      "argo-rollouts-agent" = { enabled = false }
+      "helm-agent"          = { enabled = false }
+      "cilium-policy-agent" = { enabled = false }
+      "cilium-manager-agent" = { enabled = false }
+      "cilium-debug-agent"  = { enabled = false }
+      "grafana-mcp"         = { enabled = false }
+      "querydoc"            = { enabled = false }
     })
   ]
 }
