@@ -119,3 +119,30 @@ module "eks" {
     Terraform   = "true"
   }
 }
+
+# ── Security ──────────────────────────────────────────────────────────────────
+
+resource "aws_security_group" "agentgw_lb" {
+  name        = "agentgw-lb-${module.eks.cluster_name}"
+  description = "Agentgateway ALB - inbound restricted to allowed_cidr"
+  vpc_id      = module.vpc.vpc_id
+  ingress {
+    description = "HTTP from allowed CIDR only"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = [var.allowed_cidr]
+    }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name      = "agentgw-lb-${module.eks.cluster_name}"
+    Terraform = "true"
+  }
+}

@@ -35,3 +35,9 @@ variable "agentgateway_version" {
   type        = string
   default     = "v2.2.1"
 }
+
+variable "aws_lbc_chart_version" {
+  description = "AWS Load Balancer Controller Helm chart version"
+  type        = string
+  default     = "1.11.0"
+}

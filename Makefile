@@ -1,20 +1,23 @@
 LAYER1 := eks-bootstrap
 LAYER2 := ai-infra
 LAYER3 := ai-agents
+LAYER4 := flux-install
 
 .PHONY: all up down \
-        eks-bootstrap-up ai-infra-up ai-agents-up \
-        eks-bootstrap-down ai-infra-down ai-agents-down \
+        eks-bootstrap-up ai-infra-up ai-agents-up flux-install-up \
+        eks-bootstrap-down ai-infra-down ai-agents-down flux-install-down \
         kubeconfig
 
-## Bootstrap all three layers in order (set TF_VAR_* first — see README)
+## Bootstrap all layers in order (set TF_VAR_* first — see README)
 up:
 	$(MAKE) eks-bootstrap-up
 	$(MAKE) ai-infra-up
 	$(MAKE) ai-agents-up
+	$(MAKE) flux-install-up
 
-## Destroy all three layers in safe reverse order
+## Destroy all layers in safe reverse order
 down:
+	$(MAKE) flux-install-down
 	$(MAKE) ai-agents-down
 	$(MAKE) ai-infra-down
 	$(MAKE) eks-bootstrap-down
@@ -23,8 +26,8 @@ down:
 
 eks-bootstrap-up:
 	terraform -chdir=$(LAYER1) init
-	terraform -chdir=$(LAYER1) apply -target=module.vpc -target=module.eks
-	terraform -chdir=$(LAYER1) apply
+	terraform -chdir=$(LAYER1) apply -target=module.vpc -target=module.eks -lock=false
+	terraform -chdir=$(LAYER1) apply -lock=false
 
 ai-infra-up:
 	terraform -chdir=$(LAYER2) init
@@ -35,14 +38,21 @@ ai-agents-up:
 	terraform -chdir=$(LAYER3) init
 	terraform -chdir=$(LAYER3) apply
 
+flux-install-up:
+	terraform -chdir=$(LAYER4) init
+	terraform -chdir=$(LAYER4) apply -var="releases_oci_url=$(TF_VAR_releases_oci_url)"
+
 eks-bootstrap-down:
-	terraform -chdir=$(LAYER1) destroy
+	terraform -chdir=$(LAYER1) destroy -lock=false
 
 ai-infra-down:
-	terraform -chdir=$(LAYER2) destroy
+	terraform -chdir=$(LAYER2) destroy -lock=false
 
 ai-agents-down:
-	terraform -chdir=$(LAYER3) destroy
+	terraform -chdir=$(LAYER3) destroy -lock=false
+
+flux-install-down:
+	terraform -chdir=$(LAYER4) destroy -lock=false
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
 
