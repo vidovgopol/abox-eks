@@ -9,7 +9,7 @@ spec:
   description: Support assistant with weather lookup (ADK + Anthropic).
   byo:
     deployment:
-      image: docker.io/vidovgopol/support_agent:test-v3
+      image: docker.io/vidovgopol/support_agent:test-v4
       env:
         - name: ANTHROPIC_API_KEY
           valueFrom:
