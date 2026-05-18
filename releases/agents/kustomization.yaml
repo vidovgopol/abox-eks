@@ -3,6 +3,7 @@ kind: Kustomization
 
 resources:
   - mcp-website-fetcher.yaml
+  - test-kmcp-server.yaml
   - kubagent.yaml
   - agent-k8s-simple.yaml
   - agent-fetch.yaml

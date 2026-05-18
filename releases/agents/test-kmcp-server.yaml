@@ -1,0 +1,25 @@
+apiVersion: kagent.dev/v1alpha1
+kind: MCPServer
+metadata:
+  name: test-kmcp-server
+  namespace: kagent
+  annotations:
+    kmcp.dev/description: MCP server built with fastmcp-python
+    kmcp.dev/project-name: test-kmcp-server
+  labels:
+    app.kubernetes.io/component: mcp-server
+    app.kubernetes.io/instance: test-kmcp-server
+    app.kubernetes.io/managed-by: kmcp
+    app.kubernetes.io/name: test-kmcp-server
+    app.kubernetes.io/part-of: kmcp
+    kmcp.dev/framework: fastmcp-python
+    kmcp.dev/version: 0.1.1
+spec:
+  deployment:
+    args:
+    - src/main.py
+    cmd: python
+    image: vidovgopol/test-kmcp-server:0.1.1
+    port: 3000
+  stdioTransport: {}
+  transportType: stdio
