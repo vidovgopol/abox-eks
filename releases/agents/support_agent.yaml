@@ -16,3 +16,5 @@ spec:
             secretKeyRef:
               name: anthropic-api-key
               key: api-key
+        - name: MCP_SERVER_URL
+          value: "http://test-kmcp-server.kagent:3000/mcp"
