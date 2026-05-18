@@ -7,3 +7,4 @@ resources:
   - kubagent.yaml
   - agent-k8s-simple.yaml
   - agent-fetch.yaml
+  - support_agent.yaml
