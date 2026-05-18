@@ -28,3 +28,11 @@ spec:
         name: mcp-website-fetcher
         toolNames:
         - fetch
+    - type: McpServer
+      mcpServer:
+        apiGroup: kagent.dev
+        kind: MCPServer
+        name: test-kmcp-server
+        toolNames:
+        - echo
+        - weather
