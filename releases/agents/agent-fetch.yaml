@@ -13,9 +13,11 @@ spec:
         - id: web-fetch
           name: Web Fetch
           description: Retrieve and summarise the contents of any webpage
+          tags: []
         - id: weather-lookup
           name: Weather Lookup
           description: Get current weather for any location
+          tags: []
     systemMessage: |-
       You're a friendly and helpful agent that uses the fetch tool to retrieve webpage contents.
 
