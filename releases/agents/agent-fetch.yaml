@@ -8,6 +8,11 @@ spec:
   type: Declarative
   declarative:
     modelConfig: default-model-config
+    a2aConfig:
+      skills:
+        - id: kubernetes-operations
+          name: Kubernetes Operations
+          description: Inspect, troubleshoot and manage Kubernetes cluster resources
     systemMessage: |-
       You're a friendly and helpful agent that uses the fetch tool to retrieve webpage contents.
 
