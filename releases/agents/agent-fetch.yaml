@@ -10,9 +10,12 @@ spec:
     modelConfig: default-model-config
     a2aConfig:
       skills:
-        - id: kubernetes-operations
-          name: Kubernetes Operations
-          description: Inspect, troubleshoot and manage Kubernetes cluster resources
+        - id: web-fetch
+          name: Web Fetch
+          description: Retrieve and summarise the contents of any webpage
+        - id: weather-lookup
+          name: Weather Lookup
+          description: Get current weather for any location
     systemMessage: |-
       You're a friendly and helpful agent that uses the fetch tool to retrieve webpage contents.
 
