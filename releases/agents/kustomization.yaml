@@ -8,3 +8,4 @@ resources:
   - agent-k8s-simple.yaml
   - agent-fetch.yaml
   - support_agent.yaml
+  - support-agent-svc.yaml
