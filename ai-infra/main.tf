@@ -264,3 +264,176 @@ resource "kubectl_manifest" "kagent_httproute" {
   })
   depends_on = [kubectl_manifest.agentgw_gateway, helm_release.kagent]
 }
+
+# ── Agent Registry ────────────────────────────────────────────────────────────
+
+resource "null_resource" "agentregistry_helm" {
+  provisioner "local-exec" {
+    command = <<-EOT
+      set -e
+      TMP=$(mktemp -d)
+      curl -sL https://github.com/den-vasyliev/agentregistry-inventory/archive/refs/heads/main.tar.gz \
+        | tar -xz -C "$TMP" --strip-components=1
+      helm upgrade --install agentregistry "$TMP/charts/agentregistry" \
+        --namespace agentregistry \
+        --create-namespace \
+        --set replicaCount=1 \
+        --wait --timeout 10m0s
+      rm -rf "$TMP"
+    EOT
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = <<-EOT
+      # Remove finalizers from all agentcatalog CRs before Helm uninstall,
+      # otherwise the controller removal leaves them stuck and the namespace
+      # hangs in Terminating indefinitely.
+      for name in $(kubectl get agentcatalogs -n agentregistry -o name 2>/dev/null); do
+        kubectl patch $name -n agentregistry --type=merge -p '{"metadata":{"finalizers":[]}}' 2>/dev/null || true
+      done
+      helm uninstall agentregistry -n agentregistry --wait 2>/dev/null || true
+    EOT
+  }
+
+  triggers = {
+    chart_repo = "den-vasyliev/agentregistry-inventory@main-r1-t10m"
+  }
+}
+
+# ── Qdrant ────────────────────────────────────────────────────────────────────
+
+resource "kubectl_manifest" "qdrant_namespace" {
+  yaml_body = yamlencode({
+    apiVersion = "v1"
+    kind       = "Namespace"
+    metadata   = { name = "qdrant" }
+  })
+}
+
+resource "kubectl_manifest" "qdrant_api_key_secret" {
+  sensitive_fields = ["stringData.api-key"]
+  yaml_body = yamlencode({
+    apiVersion = "v1"
+    kind       = "Secret"
+    metadata = {
+      name      = "qdrant-api-key"
+      namespace = "qdrant"
+    }
+    type = "Opaque"
+    stringData = {
+      "api-key" = var.qdrant_api_key
+    }
+  })
+  depends_on = [kubectl_manifest.qdrant_namespace]
+}
+
+resource "helm_release" "qdrant" {
+  name       = "qdrant"
+  repository = "https://qdrant.github.io/qdrant-helm"
+  chart      = "qdrant"
+  version    = var.qdrant_chart_version
+  namespace  = "qdrant"
+
+  values = [
+    yamlencode({
+      replicaCount = 1
+      apiKey = {
+        existingSecret    = "qdrant-api-key"
+        existingSecretKey = "api-key"
+      }
+      persistence = {
+        size             = "10Gi"
+        storageClassName = "gp3"
+      }
+      resources = {
+        requests = { cpu = "100m", memory = "256Mi" }
+        limits   = { cpu = "1",    memory = "1Gi" }
+      }
+    })
+  ]
+
+  depends_on = [
+    kubectl_manifest.gp3_storageclass,
+    kubectl_manifest.qdrant_api_key_secret,
+  ]
+}
+
+# ── MCP Security Governance ───────────────────────────────────────────────────
+
+resource "null_resource" "mcp_governance_helm" {
+  provisioner "local-exec" {
+    command = <<-EOT
+      set -e
+      TMP=$(mktemp -d)
+      curl -sL https://github.com/techwithhuz/mcp-security-governance/archive/refs/heads/main.tar.gz \
+        | tar -xz -C "$TMP" --strip-components=1
+      helm upgrade --install mcp-governance "$TMP/charts/mcp-governance" \
+        --namespace mcp-governance \
+        --create-namespace \
+        --set controller.image.repository=docker.io/vidovgopol/mcp-governance-controller \
+        --set controller.image.tag=0.1.0 \
+        --set controller.image.pullPolicy=Always \
+        --set dashboard.image.repository=docker.io/vidovgopol/mcp-governance-dashboard \
+        --set dashboard.image.tag=0.1.0 \
+        --set dashboard.image.pullPolicy=Always \
+        --wait --timeout 10m0s
+      rm -rf "$TMP"
+    EOT
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "helm uninstall mcp-governance -n mcp-governance --wait 2>/dev/null || true"
+  }
+
+  triggers = {
+    chart_repo = "techwithhuz/mcp-security-governance@main-images-0.1.0"
+  }
+}
+
+resource "kubectl_manifest" "mcp_governance_policy" {
+  yaml_body  = file("${path.module}/mcp-governance-policy.yaml")
+  depends_on = [null_resource.mcp_governance_helm]
+}
+
+resource "kubectl_manifest" "google_api_key" {
+  count = var.google_api_key != "" ? 1 : 0
+
+  sensitive_fields = ["stringData.GOOGLE_API_KEY"]
+  yaml_body = yamlencode({
+    apiVersion = "v1"
+    kind       = "Secret"
+    metadata = {
+      name      = "google-api-key"
+      namespace = "mcp-governance"
+    }
+    type = "Opaque"
+    stringData = {
+      GOOGLE_API_KEY = var.google_api_key
+    }
+  })
+  depends_on = [null_resource.mcp_governance_helm]
+}
+
+resource "kubectl_manifest" "agentregistry_discovery_config" {
+  yaml_body = yamlencode({
+    apiVersion = "agentregistry.dev/v1alpha1"
+    kind       = "DiscoveryConfig"
+    metadata = {
+      name      = "local-kagent"
+      namespace = "agentregistry"
+    }
+    spec = {
+      environments = [{
+        name  = "local"
+        cluster = { name = "local" }
+        discoveryEnabled = true
+        deployEnabled    = false
+        namespaces       = ["kagent"]
+        resourceTypes    = ["Agent", "MCPServer", "ModelConfig"]
+      }]
+    }
+  })
+  depends_on = [null_resource.agentregistry_helm]
+}

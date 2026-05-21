@@ -1,0 +1,113 @@
+---
+# Sample MCPGovernancePolicy - defines what to check
+apiVersion: governance.mcp.io/v1alpha1
+kind: MCPGovernancePolicy
+metadata:
+  name: enterprise-mcp-policy
+  namespace: mcp-governance
+spec:
+  requireAgentGateway: true
+  requireCORS: true
+  requireJWTAuth: true
+  requireRBAC: true
+  requirePromptGuard: true
+  requireTLS: true
+  requireRateLimit: true
+  # Governance scan interval — how often the controller re-evaluates the cluster
+  # Supported values: "30s", "1m", "5m", "10m", "1h" etc. Default: "5m"
+  scanInterval: "5m"
+  maxToolsWarning: 10
+  maxToolsCritical: 15
+  scoringWeights:
+    agentGatewayIntegration: 25
+    authentication: 20
+    authorization: 15
+    corsPolicy: 10
+    tlsEncryption: 10
+    promptGuard: 5
+    rateLimit: 5
+    toolScope: 10
+  severityPenalties:
+    critical: 40
+    high: 25
+    medium: 15
+    low: 5
+  # Verified Catalog Scoring configuration
+  verifiedCatalogScoring:
+    # Category weights (should sum to 100)
+    # Controls how the final composite score is computed
+    securityWeight: 50      # Weight for security score
+    trustWeight: 30         # Weight for trust score
+    complianceWeight: 20    # Weight for compliance score
+    # Status thresholds
+    verifiedThreshold: 70   # Score >= 70 → "Verified"
+    unverifiedThreshold: 50 # Score >= 50 → "Unverified", < 50 → "Rejected"
+    # Per-check maximum scores (customize severity of each check)
+    checkMaxScores:
+      PUB-001: 20  # Publisher Verification
+      PUB-002: 15  # Code Signing
+      PUB-003: 15  # Publisher Trust
+      SEC-001: 15  # Transport Security
+      SEC-002: 10  # Deployment Security
+      DEP-001: 10  # Dependency Analysis
+      DEP-002: 10  # Vulnerability Scanning
+      DEP-003: 10  # License Compliance
+      TOOL-001: 5  # Tool Scope
+      USE-001: 5   # Usage Patterns
+  # targetNamespaces is empty – scan all namespaces by default
+  targetNamespaces: []
+  excludeNamespaces:
+    - kube-system
+    - kube-public
+    - kube-node-lease
+    - local-path-storage
+  # AI Agent configuration (optional)
+  # Provides AI-driven governance scoring alongside algorithmic scoring
+  aiAgent:
+    # Disabled by default — set google_api_key variable and flip to true to enable
+    enabled: false
+    # Provider: "gemini" (requires GOOGLE_API_KEY env var) or "ollama" (local model)
+    provider: gemini
+    # Model name: e.g. "gemini-2.5-flash" for Gemini, "llama3.1" or "qwen2.5" for Ollama
+    model: "gemini-2.5-flash"
+    # Ollama endpoint (only used when provider is "ollama")
+    # ollamaEndpoint: "http://localhost:11434"
+    # Interval between periodic AI evaluations (e.g. "5m", "10m", "1h")
+    scanInterval: "5m"
+    # Set to false to disable periodic scanning (manual-only via dashboard button)
+    scanEnabled: true
+  # Skills Catalog governance configuration
+  # Controls security checks, metadata validation, and scoring for AI skills
+  skillGovernance:
+    # Enable Skills Catalog governance and security scanning
+    enabled: true
+    # Enable security checks on skill file content (SKL-SEC-001 through SKL-SEC-013)
+    scanRepoContent: true
+    # GitHub token for private repository access (loaded from secret in production)
+    githubToken: ""
+    # Scan result cache TTL in minutes (prevents repeated scans for the same catalog/revision)
+    scanCacheTTLMinutes: 60
+    # Fail evaluation if prompt injection patterns detected (SKL-SEC-001)
+    failOnPromptInjection: true
+    # Fail evaluation if privilege escalation patterns detected (SKL-SEC-002)
+    failOnPrivilegeEscalation: true
+    # Allowed external domains for safe HTTP calls (e.g., analytics, logging)
+    # URLs matching these patterns are not flagged as SSRF/exfiltration
+    allowedExternalDomains:
+      - "api.github.com"
+      - "api.gitlab.com"
+    # Skill categories that MUST contain safety guardrail phrases (SKL-SEC-006)
+    # Checks for phrases like "requires approval", "confirm before", "dangerous operation"
+    requireSafetyGuardrails:
+      - "database"
+      - "infra"
+      - "admin"
+---
+# Sample GovernanceEvaluation trigger
+apiVersion: governance.mcp.io/v1alpha1
+kind: GovernanceEvaluation
+metadata:
+  name: enterprise-evaluation
+spec:
+  policyRef: enterprise-mcp-policy
+  evaluationScope: cluster

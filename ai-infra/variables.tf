@@ -37,3 +37,22 @@ variable "aws_lbc_chart_version" {
   default     = "1.11.0"
 }
 
+variable "google_api_key" {
+  description = "Google API key for MCP governance AI scoring (Gemini). Leave empty to skip the Secret and run governance without AI."
+  type        = string
+  sensitive   = true
+  default     = ""
+}
+
+variable "qdrant_chart_version" {
+  description = "Qdrant Helm chart version"
+  type        = string
+  default     = "1.18.0"
+}
+
+variable "qdrant_api_key" {
+  description = "Qdrant API key for in-cluster authentication. Pass via TF_VAR_qdrant_api_key."
+  type        = string
+  sensitive   = true
+}
+
