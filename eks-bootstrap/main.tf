@@ -97,9 +97,26 @@ module "eks" {
       ami_type       = "AL2023_x86_64_STANDARD"
       instance_types = ["t3.medium"]
 
-      min_size     = 2
-      max_size     = 2
-      desired_size = 2
+      min_size     = 3
+      max_size     = 3
+      desired_size = 3
+
+      # Raise kubelet maxPods to 48 to match VPC CNI prefix delegation
+      # (t3.medium: 3 ENIs × 1 prefix × 16 IPs = 48)
+      cloudinit_pre_nodeadm = [
+        {
+          content_type = "application/node.eks.aws"
+          content      = <<-EOT
+            ---
+            apiVersion: node.eks.aws/v1alpha1
+            kind: NodeConfig
+            spec:
+              kubelet:
+                config:
+                  maxPods: 48
+          EOT
+        }
+      ]
 
       # Instance metadata options
       metadata_options = {
