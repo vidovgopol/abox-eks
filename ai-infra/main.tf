@@ -416,6 +416,72 @@ resource "kubectl_manifest" "google_api_key" {
   depends_on = [null_resource.mcp_governance_helm]
 }
 
+# ── KRO (Kubernetes Resource Orchestrator) ────────────────────────────────────
+# Provides the ResourceGraphDefinition CRD used to compose AgenticSandbox
+# from Sandbox + Service + NetworkPolicy + Ingress.
+# Installed via helm CLI to sidestep an OCI tag mismatch with the TF helm
+# provider (chart's Chart.yaml version is v-prefixed but OCI tag is not).
+
+resource "null_resource" "kro_helm" {
+  provisioner "local-exec" {
+    command = <<-EOT
+      helm upgrade --install kro oci://registry.k8s.io/kro/charts/kro \
+        --version ${var.kro_version} \
+        --namespace kro-system \
+        --create-namespace \
+        --wait --timeout 5m0s
+    EOT
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "helm uninstall kro -n kro-system --wait 2>/dev/null || true"
+  }
+
+  triggers = {
+    version = var.kro_version
+  }
+}
+
+# ── Agent Sandbox controller + CRDs ───────────────────────────────────────────
+# Installed from the upstream release manifest. Creates the agent-sandbox-system
+# namespace, the Sandbox CRD, controller Deployment, and RBAC.
+
+resource "null_resource" "agent_sandbox_install" {
+  provisioner "local-exec" {
+    command = "kubectl apply -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${var.agent_sandbox_version}/manifest.yaml"
+  }
+
+  provisioner "local-exec" {
+    when    = destroy
+    command = "kubectl delete -f https://github.com/kubernetes-sigs/agent-sandbox/releases/download/${self.triggers.version}/manifest.yaml --ignore-not-found=true"
+  }
+
+  triggers = {
+    version = var.agent_sandbox_version
+  }
+}
+
+# ── AgenticSandbox composite CRD (KRO RGD) ───────────────────────────────────
+# Once applied, KRO generates the AgenticSandbox CRD that bundles a Sandbox
+# with its Service, NetworkPolicy, and Ingress.
+
+resource "kubectl_manifest" "agentic_sandbox_rgd" {
+  yaml_body  = file("${path.module}/agentic-sandbox-rgd.yaml")
+  depends_on = [null_resource.kro_helm, null_resource.agent_sandbox_install]
+}
+
+# ── Demo AgenticSandbox instance ──────────────────────────────────────────────
+# Exercises the network-policies path: nginx Sandbox with ingress restricted
+# to pods labeled role=sandbox-client in the default namespace, egress limited
+# to kube-dns. Disable via agentic_sandbox_demo_enabled=false in production.
+
+resource "kubectl_manifest" "agentic_sandbox_demo" {
+  count      = var.agentic_sandbox_demo_enabled ? 1 : 0
+  yaml_body  = file("${path.module}/agentic-sandbox-demo.yaml")
+  depends_on = [kubectl_manifest.agentic_sandbox_rgd]
+}
+
 resource "kubectl_manifest" "agentregistry_discovery_config" {
   yaml_body = yamlencode({
     apiVersion = "agentregistry.dev/v1alpha1"

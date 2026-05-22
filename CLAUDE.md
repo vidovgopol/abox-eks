@@ -66,15 +66,18 @@ aws eks update-kubeconfig \
 - Cluster name: `aire-eks` (stable, no random suffix)
 - Kubernetes 1.34, AL2023 AMI, `t3.large` × 2
 - Public API endpoint restricted to `46.219.224.0/21`
-- Addons: coredns, eks-pod-identity-agent, kube-proxy, vpc-cni
+- Addons: coredns, eks-pod-identity-agent, kube-proxy, vpc-cni (NetworkPolicy enforcement enabled via `configuration_values = { enableNetworkPolicy = "true" }`), aws-ebs-csi-driver
 
 ### Layer 2 — ai-infra
 
-- Helm charts (OCI): `kagent-crds`, `kagent`, `agentgateway-crds`, `agentgateway`
+- Helm charts (OCI): `kagent-crds`, `kagent`, `agentgateway-crds`, `agentgateway`, `kro`
 - AWS Security Group `agentgw-lb-aire-eks`: port 80 inbound from `var.allowed_cidr` only; attached to the Gateway NLB via annotation `service.beta.kubernetes.io/aws-load-balancer-security-groups`
 - `kubernetes_secret_v1` `anthropic-api-key` in namespace `kagent` (value from `var.anthropic_api_key`, sensitive)
 - `ModelConfig` CR `default-model-config` (`kagent.dev/v1alpha2`) is created by the kagent Helm chart (v0.9.2+); **not managed by Terraform**. Uses `spec.apiKeySecret` / `spec.apiKeySecretKey` fields (v1alpha2 schema — not `spec.anthropic.apiKeySecretRef`).
 - `Gateway` + `HTTPRoute`: routes `/api` → `kagent-controller:8083`, `/` → `kagent-ui:8080`
+- **Agent Sandbox** (`agent-sandbox-system` ns): controller + CRDs applied from upstream release manifest `v0.4.6` via `null_resource.agent_sandbox_install`. CRD: `sandboxes.agents.x-k8s.io`.
+- **KRO** (`kro-system` ns) + `ResourceGraphDefinition` `agentic-sandbox` (file `agentic-sandbox-rgd.yaml`) generates the `AgenticSandbox` CRD (`custom.agents.x-k8s.io/v1alpha1`) composing Sandbox + Service + NetworkPolicy + Ingress.
+- Demo `AgenticSandbox` `demo` in `default` ns (file `agentic-sandbox-demo.yaml`), gated by `var.agentic_sandbox_demo_enabled` (default `true`). NetworkPolicy: ingress restricted to pods labeled `role=sandbox-client`; egress only to kube-dns.
 
 ### Layer 3 — ai-agents
 
