@@ -59,7 +59,10 @@ module "eks" {
     }
     kube-proxy             = {}
     vpc-cni                = {
-      before_compute = true
+      before_compute       = true
+      configuration_values = jsonencode({
+        enableNetworkPolicy = "true"
+      })
     }
     aws-ebs-csi-driver     = {}
   }
@@ -97,9 +100,9 @@ module "eks" {
       ami_type       = "AL2023_x86_64_STANDARD"
       instance_types = ["t3.medium"]
 
-      min_size     = 3
+      min_size     = 2
       max_size     = 3
-      desired_size = 3
+      desired_size = 2
 
       # Raise kubelet maxPods to 48 to match VPC CNI prefix delegation
       # (t3.medium: 3 ENIs × 1 prefix × 16 IPs = 48)

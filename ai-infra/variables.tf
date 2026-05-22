@@ -56,3 +56,21 @@ variable "qdrant_api_key" {
   sensitive   = true
 }
 
+variable "kro_version" {
+  description = "KRO (Kubernetes Resource Orchestrator) Helm chart OCI tag (e.g. 0.9.2)."
+  type        = string
+  default     = "0.9.2"
+}
+
+variable "agent_sandbox_version" {
+  description = "agent-sandbox release tag — manifest.yaml from this tag is applied to install the controller and CRDs."
+  type        = string
+  default     = "v0.4.6"
+}
+
+variable "agentic_sandbox_demo_enabled" {
+  description = "Apply the demo AgenticSandbox instance (nginx + NetworkPolicy) for the lab5 walkthrough. Set to false in production."
+  type        = bool
+  default     = true
+}
+

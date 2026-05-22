@@ -1,0 +1,33 @@
+apiVersion: custom.agents.x-k8s.io/v1alpha1
+kind: AgenticSandbox
+metadata:
+  name: demo
+  namespace: default
+spec:
+  image: nginx
+  service:
+    port: 80
+  networkPolicy:
+    enabled: true
+    ingress:
+      podLabels:
+        role: sandbox-client
+      # NOTE: The RGD emits podSelector and namespaceSelector as separate
+      # `from` items (OR semantics). To make only `role=sandbox-client`
+      # effective, point namespaceLabels at a label no namespace carries
+      # so the namespaceSelector clause matches nothing.
+      namespaceLabels:
+        agentic-sandbox/access: "none"
+    egress:
+      - to:
+          - namespaceSelector:
+              matchLabels:
+                kubernetes.io/metadata.name: kube-system
+            podSelector:
+              matchLabels:
+                k8s-app: kube-dns
+        ports:
+          - protocol: UDP
+            port: 53
+          - protocol: TCP
+            port: 53
