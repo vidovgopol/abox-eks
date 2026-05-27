@@ -1,36 +1,8 @@
 # Vin's Questions — AI Infrastructure Self-Assessment
 
-> Final assignment / interviewer questions. Answers are grounded in **this repo's actual stack** and verified against primary docs (kagent.dev, agentgateway.dev, kgateway.dev, gofastmcp.com, docs.vllm.ai, llm-d.ai). Where a capability exists in the tooling but is **not yet enabled in our cluster**, that is stated explicitly. Confidence notes are inline.
+# Дисклеймер
 
-## Our stack, in one paragraph
-
-EKS (`aire-eks`) running **kagent v0.9.2** as the agent framework. Agents are either `type: Declarative` (LLM + system prompt + MCP tools, ADK runtime) or `type: BYO` (a container, e.g. an ADK/A2A agent) — see [releases/agents/](releases/agents/). The default [`ModelConfig`](ai-infra/main.tf) `default-model-config` points at **Anthropic Claude `claude-sonnet-4-6`** via an API-key Secret — i.e. we currently use a **hosted model API**, not self-hosted inference. Ingress is **agentgateway v2.2.1** (`oci://ghcr.io/kgateway-dev/charts`, powered by kgateway), today doing only path routing (`/api`→`kagent-controller`, `/`→`kagent-ui`) — its LLM/AI-gateway features are not yet switched on. MCP tools run as kagent `MCPServer`/`RemoteMCPServer` CRs, some scaffolded with **kmcp + fastmcp-python** ([test-kmcp-server.yaml](releases/agents/test-kmcp-server.yaml)). Agents ship via **Flux GitOps** (`releases/` → OCI artifact on `git tag v*` → `prune=true`). We also run an **MCP Security Governance** controller and an **Agent Registry** in `ai-infra`.
-
-The recurring theme below: **kagent is a thin agent runtime; resilience, routing, failover, and FinOps belong to the gateway layer (agentgateway/kgateway), and inference performance belongs to the serving layer (vLLM/llm-d).** Knowing which layer owns each concern is the whole answer to most of these questions.
-
----
-
-## TL;DR matrix
-
-| # | Question | Short answer |
-|---|---|---|
-| 1 | Handle "agent got stuck"? | No kagent-native step/timeout field. Bounded by ADK `max_llm_calls` (default 500) + **gateway request/backend timeouts** as the real backstop. |
-| 2 | Auto timeout / circuit breaker from the framework? | **Not from kagent.** From **agentgateway**: request/backend timeouts, retries, and failover-eviction (outlier ejection). Classic circuit-breaker syntax unconfirmed for v2.2.1. |
-| 3 | kgateway model failover? | **Yes** — `AgentgatewayBackend.spec.ai.groups` = ordered priority tiers; eviction on `429`/`5xx`/timeout via CEL `unhealthyCondition`. Not enabled in our cluster yet. |
-| 4 | Auto-switch OpenAI → Claude → local? | **Yes**, same `groups` failover, mixing OpenAI + Anthropic + an OpenAI-compatible local (vLLM) backend. |
-| 5 | Seamless response formats across providers? | **Yes** — gateway exposes one **OpenAI-compatible** schema and translates per provider. |
-| 6 | Version kagent agents? | **No version field in the CR.** Versioning = container image tag (BYO) + **git tag / Flux OCI revision** (our effective version) + optional A2A AgentCard `version`. |
-| 7 | Blue/green or canary for agents? | **Nothing kagent-native.** Use Gateway API weighted `backendRefs` + Argo Rollouts / Flagger. Watch session stickiness. |
-| 8 | What is fastmcp-python? | A Pythonic MCP-server framework (decorator `@mcp.tool`); FastMCP 1.0 was merged into the official `mcp` SDK, FastMCP 2.x is the standalone project. |
-| 9 | Easiest path to MCP? | **fastmcp = easiest authoring**, **kmcp = easiest k8s deploy** (handles image, CRD, stdio→HTTP bridge). Trade-offs below. |
-| 10 | FinOps: how much control? | A lot — **at the gateway** (token rate limits, per-key budgets, usage metrics). Caveat: **token-based, not dollar-based**; $ is a manual conversion. |
-| 11 | Token-level / per-agent level? | Token-level: yes (`rateLimit` `tokens`, `ModelConfig.maxTokens`). Per-agent: requires routing per agent (separate route/backend/virtual-key), since today agents share one key. |
-| 12 | Custom cost controls? | Yes — gateway token limits + global rate-limit descriptors + guardrails, plus app-level `max_llm_calls`, plus our MCP Governance policy scoring. |
-| 13 | Per-agent budgets / token-depth limits? | Via per-agent virtual keys + token rate limits at the gateway; `ModelConfig.maxTokens` caps per-response depth. Not on by default. |
-| 14 | vLLM for many tool-call round-trips, or single-shot? | **Both.** Automatic Prefix Caching makes the growing-prefix agentic loop efficient; tool-calling is served natively. |
-| 15 | Does llm-d's scheduler help with ~15 calls? | **Yes** — prefix-cache-aware (KV-cache-aware) routing pins the 15 calls to the replica that already holds the prefix. It routes; it does **not** reduce call count. |
-
----
+## Відвовідь на цю Лабораторну повністю згенерована через Claude, оскільки дані питання доволі технічно продвинуті, то по кожному треба прямо розбиратись і тестувати. Це рівень вже інженера з практичним досвідом. Проте попередньо інфраструктура, яка була піднята на курсі може задовольнити більшість питань і є гарним майданчиком для тестування.
 
 # A. Agent reliability
 
