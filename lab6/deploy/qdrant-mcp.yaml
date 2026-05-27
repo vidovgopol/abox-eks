@@ -1,0 +1,64 @@
+# Official qdrant/mcp-server-qdrant run as a Deployment (fastembed, streamable-http).
+# Package is installed at container start (same runtime-install pattern as our
+# uvx-based mcp-website-fetcher). QDRANT_API_KEY comes from a Secret, never inline.
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: qdrant-rag
+  namespace: kagent
+  labels:
+    app: qdrant-rag
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: qdrant-rag
+  template:
+    metadata:
+      labels:
+        app: qdrant-rag
+    spec:
+      containers:
+        - name: mcp
+          image: python:3.12-slim
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              apt-get update && apt-get install -y --no-install-recommends libgomp1
+              pip install --no-cache-dir "mcp-server-qdrant"
+              exec mcp-server-qdrant --transport streamable-http
+          ports:
+            - { containerPort: 8000, name: mcp }
+          env:
+            - { name: FASTMCP_SERVER_HOST, value: "0.0.0.0" }
+            - { name: FASTMCP_SERVER_PORT, value: "8000" }
+            - { name: QDRANT_URL, value: "http://qdrant.qdrant.svc.cluster.local:6333" }
+            - { name: COLLECTION_NAME, value: "knowledge-base" }
+            - { name: EMBEDDING_PROVIDER, value: "fastembed" }
+            - { name: EMBEDDING_MODEL, value: "sentence-transformers/all-MiniLM-L6-v2" }
+            - { name: QDRANT_SEARCH_LIMIT, value: "5" }
+            - name: QDRANT_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: qdrant-api-key   # created in the kagent ns at deploy time
+                  key: api-key
+          readinessProbe:
+            tcpSocket: { port: 8000 }
+            initialDelaySeconds: 20
+            periodSeconds: 10
+            failureThreshold: 40          # generous: pip install + first run
+          resources:
+            requests: { cpu: 100m, memory: 256Mi }
+            limits: { cpu: "1", memory: 1Gi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: qdrant-rag
+  namespace: kagent
+spec:
+  selector:
+    app: qdrant-rag
+  ports:
+    - { port: 8000, targetPort: 8000, name: mcp }

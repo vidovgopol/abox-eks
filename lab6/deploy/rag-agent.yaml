@@ -1,0 +1,46 @@
+# Registers the in-cluster mcp-server-qdrant as a kagent tool source, and a
+# Declarative RAG agent that grounds answers in qdrant-find results.
+apiVersion: kagent.dev/v1alpha2
+kind: RemoteMCPServer
+metadata:
+  name: qdrant-rag
+  namespace: kagent
+spec:
+  description: Qdrant-backed RAG knowledge base (qdrant-store / qdrant-find).
+  protocol: STREAMABLE_HTTP
+  url: http://qdrant-rag.kagent.svc.cluster.local:8000/mcp
+  timeout: 30s
+  sseReadTimeout: 5m0s
+---
+apiVersion: kagent.dev/v1alpha2
+kind: Agent
+metadata:
+  name: rag-agent
+  namespace: kagent
+spec:
+  type: Declarative
+  description: Answers questions strictly from our knowledge base in Qdrant (RAG).
+  declarative:
+    modelConfig: default-model-config
+    systemMessage: |-
+      You are a knowledge-base assistant. Answer ONLY from retrieved context.
+
+      # Workflow
+      - For every factual question, FIRST call `qdrant-find` with a focused query.
+      - Ground your answer strictly in the returned documents. Cite each source via
+        the `metadata` of the results (e.g. the `source` field).
+      - If `qdrant-find` returns nothing relevant, reply "I don't have that in the
+        knowledge base." Do NOT use outside knowledge or guess.
+      - Use `qdrant-store` ONLY when the user explicitly asks to save information.
+
+      # Response format
+      - Markdown. Give the answer first, then a "Sources" list built from result metadata.
+    tools:
+      - type: McpServer
+        mcpServer:
+          apiGroup: kagent.dev
+          kind: RemoteMCPServer
+          name: qdrant-rag
+          toolNames:
+            - qdrant-find
+            - qdrant-store

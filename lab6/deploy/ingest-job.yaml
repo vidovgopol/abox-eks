@@ -1,0 +1,77 @@
+# One-off ingestion: writes a small demo corpus through the server's own
+# qdrant-store tool (guarantees the named-vector + payload.document schema that
+# qdrant-find expects). Runs in-cluster so it can reach the MCP Service.
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: rag-ingest
+  namespace: kagent
+data:
+  ingest.py: |
+    import asyncio, os
+    from fastmcp import Client
+
+    MCP_URL = os.environ.get("MCP_URL", "http://qdrant-rag.kagent.svc.cluster.local:8000/mcp")
+
+    # Distinctive facts about THIS cluster — verifiable that answers come from RAG,
+    # not the model's prior knowledge.
+    CORPUS = [
+        ("The abox-eks EKS cluster runs Kubernetes version 1.34 on t3.medium worker "
+         "nodes (min 2, max 3, desired 2) in the eu-central-1 AWS region.",
+         {"source": "infra/eks", "title": "Cluster basics"}),
+        ("In abox-eks, AI agents are managed by kagent and deployed via Flux GitOps "
+         "from the releases/ directory; pushing a git tag v* publishes an OCI artifact "
+         "that Flux applies to the cluster with prune enabled.",
+         {"source": "infra/gitops", "title": "Agent delivery"}),
+        ("The abox-eks ingress is agentgateway v2.2.1, fronted by an AWS Network Load "
+         "Balancer whose security group allows inbound HTTP only from a single allowed CIDR.",
+         {"source": "infra/gateway", "title": "Ingress"}),
+        ("Qdrant in abox-eks runs in the qdrant namespace with a 10Gi gp3 persistent "
+         "volume and API-key authentication enabled.",
+         {"source": "infra/qdrant", "title": "Vector DB"}),
+        ("The abox-eks RAG knowledge base uses the official qdrant/mcp-server-qdrant MCP "
+         "server with local fastembed embeddings (sentence-transformers/all-MiniLM-L6-v2, "
+         "384-dimensional, cosine distance).",
+         {"source": "infra/rag", "title": "RAG embeddings"}),
+        ("abox-eks also runs an MCP Security Governance controller and an Agent Registry, "
+         "both installed by Terraform in the ai-infra layer.",
+         {"source": "infra/governance", "title": "Governance"}),
+    ]
+
+    async def main():
+        async with Client(MCP_URL) as mcp:
+            tools = [t.name for t in await mcp.list_tools()]
+            print("server tools:", tools, flush=True)
+            for info, meta in CORPUS:
+                await mcp.call_tool("qdrant-store", {"information": info, "metadata": meta})
+                print("stored:", meta["title"], flush=True)
+        print("ingest complete:", len(CORPUS), "documents", flush=True)
+
+    asyncio.run(main())
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: rag-ingest
+  namespace: kagent
+spec:
+  backoffLimit: 2
+  ttlSecondsAfterFinished: 600
+  template:
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: ingest
+          image: python:3.12-slim
+          command: ["sh", "-c"]
+          args:
+            - |
+              set -e
+              pip install --no-cache-dir "fastmcp>=2,<3"
+              python /app/ingest.py
+          volumeMounts:
+            - { name: script, mountPath: /app }
+      volumes:
+        - name: script
+          configMap:
+            name: rag-ingest
